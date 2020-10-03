@@ -19,7 +19,7 @@ stash() {
 
     if [ $? -eq 0 ]; then
         echo -e "\033[1;43m STASHING CHANGES \033[0m";
-        if git stash save -u "git-update on `date`";
+        if git stash push -um "git-update on `date`";
 
         then
             stash=1;
@@ -55,7 +55,7 @@ handle_conflict() {
                 ;;
             a)
                 git rebase --abort
-                unresolved_conflicts="$unresolved_conflicts $1"
+                unresolved_conflicts+=($1)
                 break
                 ;;
         esac
@@ -199,8 +199,8 @@ done
 stash=0;
 stash;
 
-merge_conflicts="";
-unresolved_conflicts="";
+merge_conflicts=();
+unresolved_conflicts=();
 
 if [ $nopull -eq 0 ]; then
     echo -e "\033[1;43m PULLING MASTER \033[0m"
@@ -243,7 +243,7 @@ for branch in $all_branches; do
 
     conflict=$(git ls-files -u | wc -l)
     if [ $conflict -gt 0 ]; then
-        merge_conflicts="$merge_conflicts $branch"
+        merge_conflicts+=($branch)
         handle_conflict $branch;
     fi
     echo
@@ -256,24 +256,25 @@ if [ "$checkout_branch" != "$(git symbolic-ref --short -q HEAD)" ]; then
     last_checkout=1;
 fi
 
-unstash;
+if [ $no_unstash -eq 0 ]; then unstash; fi
 
 if [ $last_checkout -eq 1 ]; then
     echo
 fi
 
+unresolved_str="${unresolved_conflicts[@]}"
 echo -e "\033[1;43m RESULT \033[0m"
 echo "Finished updating all branches.";
-if [ -z $merge_conflicts ]; then
+if [ 0 -eq ${#merge_conflicts[@]} ]; then
     echo "No merge conflicts found.";
 else
     echo "Merge conflicts were found in the following branches:"
-    for branch in "$merge_conflicts"; do
+    for branch in "${merge_conflicts[@]}"; do
         if [ -z "$branch" ]; then
             continue;
         fi
         branch=`echo $branch | tr -d '[:space:]'`
-        if [[ "$unresolved_conflicts" =~ "$branch" ]]; then
+        if [[ "$unresolved_str" =~ "$branch" ]]; then
             echo -e "\033[33m$branch (aborted)\033[0m"
         else
             echo -e "\033[32m$branch (resolved)\033[0m"
@@ -281,7 +282,7 @@ else
     done
 fi
 
-if [[ "$unresolved_conflicts" =~ "$checkout_branch" ]]; then
+if [[ "$unresolved_str" =~ "$checkout_branch" ]]; then
     exit 1
 else
     exit 0
