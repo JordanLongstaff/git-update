@@ -40,8 +40,8 @@ handle_conflict() {
         if [ $always_abort -eq 1 ]; then
             rebase_action="a"
         else
-            echo -n -e "\033[01;37m(\033[0;33mC\033[1;37montinue/\033[0;33mA\033[1;37mbort):\033[0m"
-            read -n 1 -p " " rebase_action;
+            echo -n -e "\033[01;37m(\033[0;33mC\033[1;37montinue/\033[0;33mA\033[1;37mbort/\033[0;33mI\033[1;37mnteractive/\033[0;33mS\033[1;37melect branch):\033[0m"
+            read -n 1 -p " " rebase_action </dev/tty;
             if [ ! -z "$rebase_action" ]; then echo; fi
         fi
         case "$rebase_action" in
@@ -57,6 +57,28 @@ handle_conflict() {
                 git rebase --abort
                 unresolved_conflicts+=($1)
                 break
+                ;;
+            i)
+                git rebase --abort
+                git rebase -i $rebase_branch
+                conflict=$(git ls-files -u | wc -l)
+                if [ $conflict -eq 0 ]; then
+                    break
+                fi
+                ;;
+            s)
+                git rebase --abort
+                PS3=$(echo -e "\033[1;33mSelect branch (current is \033[1;36m$rebase_branch\033[1;33m): \033[0m")
+                other_branches=$(echo master; for b in $all_branches; do if [ $b != $branch ] && [ $b != "master" ]; then echo $b; fi; done)
+                select_option $other_branches
+                choice=$?
+                f="-f$((choice+1))"
+                rebase_branch=$(echo $other_branches | cut -d' ' $f)
+                git rebase $interactive $rebase_branch $branch
+                conflict=$(git ls-files -u | wc -l)
+                if [ $conflict -eq 0 ]; then
+                    break
+                fi
                 ;;
         esac
     done
@@ -181,13 +203,9 @@ while test $# -gt 0; do
                 echo "ERROR: Checkout branch must be last argument"
                 print_usage 2
             else
-                for possible in $all_branches; do
-                    if [ "$possible" == "$1" ]; then
-                        checkout_branch=$possible
-                        break
-                    fi
-                done
-                if [ "$checkout_branch" == "--" ]; then
+                if echo "$all_branches" | grep -qw "$1"; then
+                    checkout_branch=$1
+                else
                     printf "ERROR: No branch to checkout named \"%s\"\n" $1
                     exit 3
                 fi
@@ -221,25 +239,30 @@ for branch in $all_branches; do
     if [ "$branch" == "master" ]; then continue; fi
 
     echo -e "\033[1;43m REBASE \033[49m \033[1;33m$branch\033[0m"
-    git checkout $branch > /dev/null 2>&1;
 
-    default_branch=$(for r in `git rev-list HEAD...master~1`; do git branch --points-at $r; done | grep -v $branch | head -1 | cut -c 3-)
-    if [ -z $default_branch ]; then
-        default_branch="master"
-    fi
+    git rebase $interactive master $branch;
 
-    rebase_branch=""
+    rebase_branch="master"
     if [ $specify_branch -eq 1 ]; then
-        PS3=$(echo -e "\033[1;33mSelect branch (default is \033[1;36m$default_branch\033[1;33m): \033[0m")
-        other_branches=$(echo $default_branch; for b in $all_branches; do if [ $b != $branch ] && [ $b != $default_branch ]; then echo $b; fi; done)
+        PS3=$(echo -e "\033[1;33mSelect branch (default is \033[1;36mmaster\033[1;33m): \033[0m")
+        other_branches=$(echo master; for b in $all_branches; do if [ $b != $branch ] && [ $b != "master" ]; then echo $b; fi; done)
         select_option $other_branches
         choice=$?
         f="-f$((choice+1))"
         rebase_branch=$(echo $other_branches | cut -d' ' $f)
     else
-        rebase_branch=$default_branch
+        max_common_commits=0
+        for try_branch in $all_branches; do
+            if [ "$try_branch" == "master" ]; then continue; elif [ "$try_branch" == "$branch" ]; then break; fi
+            common_commits=$(git range-diff master $try_branch HEAD | sed '/ -:/q' | wc -l)
+            common_commits=$((common_commits - 1))
+            if [ $common_commits -gt $max_common_commits ]; then
+                max_common_commits=$common_commits
+                rebase_branch=$try_branch
+            fi
+        done
     fi
-    git rebase $interactive $rebase_branch;
+    if [ "$rebase_branch" != "master" ]; then git rebase $interactive $rebase_branch $branch > /dev/null; fi
 
     conflict=$(git ls-files -u | wc -l)
     if [ $conflict -gt 0 ]; then

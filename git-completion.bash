@@ -5,6 +5,6 @@ _git_update () {
     -*)
         ;;
     *)
-	    __gitcomp_direct "$(__git_heads "" "$cur" " ")"
+        __git_complete_refs --mode="heads"
     esac
 }
