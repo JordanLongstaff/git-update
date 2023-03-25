@@ -60,7 +60,7 @@ handle_conflict() {
                 ;;
             i)
                 git rebase --abort
-                git rebase -i $rebase_branch
+                git rebase -i --update-refs $rebase_branch
                 conflict=$(git ls-files -u | wc -l)
                 if [ $conflict -eq 0 ]; then
                     break
@@ -74,7 +74,7 @@ handle_conflict() {
                 choice=$?
                 f="-f$((choice+1))"
                 rebase_branch=$(echo $other_branches | cut -d' ' $f)
-                git rebase $interactive $rebase_branch $branch
+                git rebase $interactive --update-refs $rebase_branch $branch
                 conflict=$(git ls-files -u | wc -l)
                 if [ $conflict -eq 0 ]; then
                     break
@@ -238,9 +238,10 @@ fi
 for branch in $all_branches; do
     if [ "$branch" == "master" ]; then continue; fi
 
-    echo -e "\033[1;43m REBASE \033[49m \033[1;33m$branch\033[0m"
+    common_branches=$(git branch -a --contains $(git rev-parse $branch) | wc -l)
+    if [ $common_branches -gt 1 ]; then continue; fi
 
-    git rebase $interactive master $branch;
+    echo -e "\033[1;43m REBASE \033[49m \033[1;33m$branch\033[0m"
 
     rebase_branch="master"
     if [ $specify_branch -eq 1 ]; then
@@ -250,19 +251,8 @@ for branch in $all_branches; do
         choice=$?
         f="-f$((choice+1))"
         rebase_branch=$(echo $other_branches | cut -d' ' $f)
-    else
-        max_common_commits=0
-        for try_branch in $all_branches; do
-            if [ "$try_branch" == "master" ]; then continue; elif [ "$try_branch" == "$branch" ]; then break; fi
-            common_commits=$(git range-diff master $try_branch HEAD | sed '/ -:/q' | wc -l)
-            common_commits=$((common_commits - 1))
-            if [ $common_commits -gt $max_common_commits ]; then
-                max_common_commits=$common_commits
-                rebase_branch=$try_branch
-            fi
-        done
     fi
-    if [ "$rebase_branch" != "master" ]; then git rebase $interactive $rebase_branch $branch > /dev/null; fi
+    git rebase $interactive --update-refs $rebase_branch $branch
 
     conflict=$(git ls-files -u | wc -l)
     if [ $conflict -gt 0 ]; then
