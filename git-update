@@ -150,7 +150,7 @@ select_option() {
     return $selected
 }
 
-current_branch=$(git symbolic-ref --short -q HEAD);
+current_branch=$(git branch --show-current)
 all_branches=`git for-each-ref --sort=committerdate --format='%(refname:short)' refs/heads`
 checkout_branch=$current_branch
 
@@ -235,11 +235,14 @@ if [ $nopull -eq 0 ]; then
     echo
 fi
 
-for branch in $all_branches; do
-    if [ "$branch" == "master" ]; then continue; fi
+handled_branches=("master");
 
-    common_branches=$(git branch -a --contains $(git rev-parse $branch) | wc -l)
-    if [ $common_branches -gt 1 ]; then continue; fi
+for branch in $all_branches; do
+    if echo ${handled_branches[@]} | grep -wq $branch; then continue; fi
+
+    common_branches=$(git branch --contains $branch | cut -c 3-)
+    tied_branches=$(git branch --points-at $branch | wc -l)
+    if [ $(echo "$common_branches" | wc -l) -gt $tied_branches ]; then continue; fi
 
     echo -e "\033[1;43m REBASE \033[49m \033[1;33m$branch\033[0m"
 
@@ -260,10 +263,11 @@ for branch in $all_branches; do
         handle_conflict $branch;
     fi
     echo
+    handled_branches+=($common_branches)
 done
 
 last_checkout=0
-if [ "$checkout_branch" != "$(git symbolic-ref --short -q HEAD)" ]; then
+if [ "$checkout_branch" != "$(git branch --show-current)" ]; then
     echo -e "\033[1;43m CHECKOUT \033[49m \033[1;33m$checkout_branch\033[0m"
     git checkout $checkout_branch > /dev/null 2>&1;
     last_checkout=1;
